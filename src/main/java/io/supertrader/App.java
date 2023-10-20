@@ -1,13 +1,15 @@
 package io.supertrader;
 
+import io.supertrader.dao.StockInfoDAO;
+import io.supertrader.entity.StockEntity;
 import io.supertrader.infra.ConnectionUtil;
 import io.supertrader.infra.DbMigration;
+import io.supertrader.processor.StockProcessor;
+import io.supertrader.utils.StockInfoGenerator;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.sql.*;
-import java.time.LocalDateTime;
-import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * Hello world!
@@ -24,15 +26,25 @@ public class App {
         // 2. Main loop
         try (Connection connection = ConnectionUtil.getConnection()) {
             while (true) {
-                // 3. Get stocks info
-                Result result = getResult();
+                StockEntity stockEntity = StockInfoGenerator.generateStockInfo();
+
                 // 4. Update DB
-                PreparedStatement selectStockByIdStatement = getPreparedStatement(connection, result);
+                //PreparedStatement selectStockByIdStatement = getPreparedStatement(connection, result);
+                StockInfoDAO stockInfoService = new StockInfoDAO();
+                stockInfoService.upsert(stockEntity);
 
                 // 5. Stocks data processing
-                Result2 result2 = getResult2(connection, result, selectStockByIdStatement);
 
-                makeDecision(result2);
+                StockEntity processedStockEntity = null;
+                StockProcessor stockProcessor = new StockProcessor(processedStockEntity, 0, null);
+
+                //TODO refactor
+                stockProcessor.processing();
+                stockProcessor.makeDecision();
+
+//                Result2 result2 = getResult2(connection, result, selectStockByIdStatement);
+
+
 
                 Thread.sleep(2000);
 
@@ -42,27 +54,21 @@ public class App {
         }
     }
 
-    private static void makeDecision(Result2 result2) {
-        if (result2.avgPrice().divide(BigDecimal.valueOf(result2.processedMagicValue()), RoundingMode.FLOOR).compareTo(BigDecimal.TEN) > 0) {
-            System.out.println("BUY BUY BUY BUY");
-        } else {
-            System.out.println("SELL SELL SELL");
-        }
-    }
+
 
     private static Result2 getResult2(Connection connection, Result result, PreparedStatement selectStockByIdStatement) throws SQLException {
-        selectStockByIdStatement.setString(1, result.stockId());
-        ResultSet stockForProcessingRS = selectStockByIdStatement.executeQuery();
-
-        stockForProcessingRS.next();
-
-        int processedMagicValue = stockForProcessingRS.getInt("magic_value");
-
-        System.out.println(String.format("Processing stock [%s] - (%s), MV = %d",
-                stockForProcessingRS.getString("id"),
-                stockForProcessingRS.getString("description"),
-                processedMagicValue
-        ));
+//        selectStockByIdStatement.setString(1, result.stockId());
+//        ResultSet stockForProcessingRS = selectStockByIdStatement.executeQuery();
+//
+//        stockForProcessingRS.next();
+//
+//        int processedMagicValue = stockForProcessingRS.getInt("magic_value");
+//
+//        System.out.println(String.format("Processing stock [%s] - (%s), MV = %d",
+//                stockForProcessingRS.getString("id"),
+//                stockForProcessingRS.getString("description"),
+//                processedMagicValue
+//        ));
 
 
         String sqlSelectPrices = """
@@ -94,72 +100,7 @@ public class App {
         return result2;
     }
 
-    private record Result2(int processedMagicValue, BigDecimal avgPrice) {
-    }
-
-    private static PreparedStatement getPreparedStatement(Connection connection, Result result) throws SQLException {
-        String sqlSelectStockById = """
-                SELECT id, magic_value, description FROM stocks
-                       WHERE id = ?
-                """;
-        var selectStockByIdStatement = connection.prepareStatement(sqlSelectStockById);
-
-        String sqlInsertStock = """
-                INSERT INTO stocks (id, magic_value, description)
-                       VALUES (?, ?, ?)
-                """;
-        var insertStockStatement = connection.prepareStatement(sqlInsertStock);
-
-        String sqlUpdateStock = """
-                UPDATE stocks 
-                       SET magic_value = ?
-                       WHERE id = ?                    
-                """;
-        var updateStockStatement = connection.prepareStatement(sqlUpdateStock);
-
-        selectStockByIdStatement.setString(1, result.stockId());
-        ResultSet stockFromDbRS = selectStockByIdStatement.executeQuery();
-        if (stockFromDbRS.next()) {
-            updateStockStatement.setInt(1, result.magicValue());
-            updateStockStatement.setString(2, result.stockId());
-
-            updateStockStatement.executeUpdate();
-        } else {
-            insertStockStatement.setString(1, result.stockId());
-            insertStockStatement.setInt(2, result.magicValue());
-            insertStockStatement.setString(3, result.description());
-
-            insertStockStatement.executeUpdate();
-        }
-
-
-        String sqlInsertPrice = """
-                INSERT INTO stock_prices (stock_id, price_ts, price)
-                       VALUES (?, ?, ?)
-                """;
-        PreparedStatement insertPriceStatement = connection.prepareStatement(sqlInsertPrice);
-        insertPriceStatement.setString(1, result.stockId());
-        insertPriceStatement.setObject(2, result.priceTs());
-        insertPriceStatement.setBigDecimal(3, result.stockPrice());
-
-        insertPriceStatement.executeUpdate();
-        return selectStockByIdStatement;
-    }
-
-    private static Result getResult() {
-        String stockId = "GAZP";
-        String description = "Gazprom stock";
-        int magicValue = ThreadLocalRandom.current().nextInt(1, 10000);
-
-        LocalDateTime priceTs = LocalDateTime.now();
-        BigDecimal stockPrice = new BigDecimal(ThreadLocalRandom.current().nextInt(1, 10000));
-        Result result = new Result(stockId, description, magicValue, priceTs, stockPrice);
-        return result;
-    }
-
-    private record Result(String stockId, String description, int magicValue, LocalDateTime priceTs,
-                          BigDecimal stockPrice) {
-    }
-
+//    private record Result2(int processedMagicValue, BigDecimal avgPrice) {
+//    }
 
 }
