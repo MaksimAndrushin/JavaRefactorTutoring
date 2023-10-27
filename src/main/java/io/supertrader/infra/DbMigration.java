@@ -22,7 +22,7 @@ public class DbMigration {
             """;
 
     public static void initDb() {
-        try (var conn = ConnectionUtil.getConnection();
+        try (var conn = ConnectionUtil.get();
              var statement = conn.createStatement();) {
             statement.execute(SQL_CREATE_STOCK_TABLE);
             statement.execute(SQL_CREATE_PRICE_TABLE);
